@@ -111,11 +111,15 @@ update_database_pp <- function(pp_path, conn) {
 #' tag_text("Litwo, ojczyzno moja")
 tag_text <- function(txt) {
   tmp_ <- tempfile(fileext = ".txt")
+  txt <- gsub(pattern = '"', replacement = "", x = txt)
   res <- system(command = sprintf('curl -XPOST \"localhost:9003/?output_format=conll\" -d \"%s\" -o %s', txt, tmp_), intern = T)
   res <- readLines(tmp_, encoding = "UTF-8")
   res <- res[nchar(res) > 0]
   res <- res[regexpr(pattern = "--:--:--", text = res, fixed = T) < 0]
   res <- res[regexpr(pattern = "\tinterp", text = res, fixed = T) < 0]
+  if (length(res) == 0) {
+    return(data.frame(original = "", tagged = ""))
+  }
   writeLines(text = res, con = tmp_)
   res <- read.table(file = tmp_, sep = "\t", quote = "")[, c("V1", "V2")]
   names(res) <- c("original", "tagged")
