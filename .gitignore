@@ -1,0 +1,8 @@
+*
+!.gitignore
+!tm_project.Rproj
+!README.md
+!scripts/
+!scripts/*.R
+!*.sqlite
+.Rproj.user
