@@ -44,7 +44,12 @@ metadata_ip <- function(file_path) {
 
 content_ip <- function(file_path) {
   xx <- xml2::as_list(x = read_xml(file_path))$teiCorpus$TEI$text$body
-  paste0(unlist(lapply(1:length(xx), FUN = function(i) xx[i]$p[[1]])), collapse = " ")
+  paste0(unlist(lapply(X = 1:length(xx), 
+                       FUN = function(i){
+                         tryCatch(expr = {
+                           xx[i]$p[[1]]
+                         }, error = function(e) "")
+                       })), collapse = " ")
 }
 
 transform_ip <- function(ip_path) {
@@ -91,13 +96,13 @@ update_database_ip <- function(ip_path, conn) {
   DBI::dbAppendTable(conn = conn, name = "ipcontent", value = data.frame(ID = new_id, CONTENT = ip_transformed$content))
 }
 
-update_database_pp <- function(pp_path, conn) {
-  pp_transformed <- transform_pp(pp_path = pp_path)
-  new_id <- est_new_id("metadatapp", conn)
-  DBI::dbAppendTable(conn = conn, name = "metadatapp", 
-                     value = data.frame(ID = new_id, DATE = pp_transformed$date))
-  DBI::dbAppendTable(conn = conn, name = "ppcontent", 
-                     value = cbind(data.frame(ID = new_id), pp_transformed$cont))
+update_database_ps <- function(pp_path, conn) {
+  ps_transformed <- transform_pp(pp_path = pp_path)
+  new_id <- est_new_id("metadata", conn)
+  DBI::dbAppendTable(conn = conn, name = "metadata", 
+                     value = data.frame(ID = new_id, DATE = ps_transformed$date))
+  DBI::dbAppendTable(conn = conn, name = "pscontent", 
+                     value = cbind(data.frame(ID = new_id), ps_transformed$cont))
 }
 
 #' Title
@@ -124,4 +129,62 @@ tag_text <- function(txt) {
   res <- read.table(file = tmp_, sep = "\t", quote = "")[, c("V1", "V2")]
   names(res) <- c("original", "tagged")
   res
+}
+
+polish_stop_words <- function() {
+  base_stop <- c(
+    # A
+    "a", "aby", "ach", "acz", "aczkolwiek", "aj", "albo", "ale", "ależ", "ani", "aż", "art", 
+    # B
+    "bardziej", "bardzo", "bo", "bowiem", "by", "byli", "bynajmniej", "być", "był", "była", "było", "były", "będzie", 
+    "będą", 
+    # C
+    "cali", "cała", "cały", "ci", "cię", "ciebie", "co", "cokolwiek", "coś", "czasami", "czasem", "czemu", "czy", 
+    "czyli", 
+    # D
+    "daleko", "dla", "dlaczego", "dlatego", "do", "dobrze", "dokąd", "dość", "dużo", "dwa", "dwaj", "dwie", "dwoje", 
+    "dziś", "dzisiaj", 
+    # G
+    "gdy", "gdyby", "gdyż", "gdzie", "gdziekolwiek", "gdzieś", 
+    # I
+    "i", "ich", "ile", "im", "inna", "inne", "inny", "innych", "iż",
+    # J
+    "ja", "ją", "jak", "jakaś", "jakby", "jaki", "jakichś", "jakie", "jakiś", "jakiż", "jakkolwiek", "jako", "jakoś", 
+    "je", "jeden", "jedna", "jedno", "jednak", "jednakże", "jego", "jej", "jemu", "jest", "jestem", "jeszcze", "jeśli", 
+    "jeżeli", "już", "ją", 
+    # K
+    "każdy", "kiedy", "kilka", "kimś", "kto", "ktokolwiek", "ktoś", "która", "które", "którego", "której", "który", 
+    "których", "którym", "którzy", "ku", 
+    # L
+    "lat", "lecz", "lub", 
+    # M
+    "ma", "mają", "mało", "mam", "mi", "mimo", "między", "mną", "mnie", "mogą", "moi", "moim", "moja", "moje", "może", 
+    "możliwe", "można", "mój", "mu", "musi", "my", 
+    # N
+    "na", "nad", "nam", "nami", "nas", "nasi", "nasz", "nasza", "nasze", "naszego", "naszych", "natomiast", 
+    "natychmiast", "nawet", "nią", "nic", "nich", "nie", "niech", "niego", "niej", "niemu", "nigdy", "nim", "nimi", 
+    "niż", "no", 
+    # O
+    "o", "obok", "od", "około", "on", "ona", "one", "oni", "ono", "oraz", "oto", "owszem", 
+    # P
+    "pan", "pana", "pani", "po", "pod", "podczas", "pomimo", "ponad", "ponieważ", "powinien", "powinna", "powinni", 
+    "powinno", "poza", "prawie", "przecież", "przed", "przede", "przedtem", "przez", "przy", 
+    # R
+    "roku", "również", 
+    # S
+    "sam", "sama", "są", "się", "skąd", "sobie", "sobą", "sposób", "swoje", 
+    # T
+    "ta", "tak", "taka", "taki", "takie", "także", "tam", "te", "tego", "tej", "temu", "ten", "teraz", "też", "tę", "to", 
+    "tobą", "tobie", "toteż", "trzeba", "tu", "tutaj", "twoi", "twoim", "twoja", "twoje", "twym", "twój", "ty", "tych", 
+    "tylko", "tym", 
+    # U
+    "u", 
+    # W
+    "w", "wam", "wami", "was", "wasz", "wasza", "wasze", "we", "według", "wiele", "wielu", "więc", "więcej", "wszyscy", 
+    "wszystkich", "wszystkie", "wszystkim", "wszystko", "wtedy", "wy", "właśnie", 
+    # Z
+    "z", "za", "zaś", "zapewne", "zawsze", "ze", "zł", "znowu", "znów", "został", 
+    # Ż
+    "żaden", "żadna", "żadne", "żadnych", "że", "żeby")
+  c(base_stop, c("ad", "vocem"))
 }

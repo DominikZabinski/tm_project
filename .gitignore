@@ -2,6 +2,8 @@
 !.gitignore
 !tm_project.Rproj
 !README.md
+!dicts/
+!dicts/*.*
 !scripts/
 !scripts/*.R
 !*.sqlite
