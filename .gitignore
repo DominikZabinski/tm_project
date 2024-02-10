@@ -10,3 +10,4 @@
 .Rproj.user
 !.Rprofile
 !renv.lock
+!renv/activate.R

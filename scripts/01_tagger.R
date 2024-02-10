@@ -1,8 +1,48 @@
 # libraries ----
 library(DBI)
+library(googledrive)
 # functions ----
 source("scripts/__functions.R")
 # tagging ----
+max_docs <- 10
+for (sqlite_file in list.files(path = "data", pattern = "^(ps|pi).*sqlite$")) {
+  # download file from Google Drive (if needed)
+  if (!file.exists(file.path("tm_project", sqlite_file)))
+    googledrive::drive_download(file = file.path("tm_project", sqlite_file), path = "data/")
+  
+  # create connection to .sqlite file
+  database_connection <- dbConnect(RSQLite::SQLite(), file.path("data", paste0("tagged_", sqlite_file)))
+  # create directory to store the tagged data
+  tg_path <- paste0("tagged_", gsub(pattern = ".sqlite", replacement = "", x = sqlite_file, fixed = TRUE))
+  dir.create(path = tg_path, showWarnings = FALSE)
+  # find out how many documents there is to process
+  document_to_process <- dbGetQuery(conn = database_connection, 
+                                    statement = "select id from metadata")$ID
+  
+  # cross check it with existing files
+  existing_files <- gsub(pattern = ".txt", replacement = "", x = list.files(path = tg_path), fixed = TRUE)
+  document_to_process <- setdiff(document_to_process, existing_files)
+  if (!is.null(max_docs)) document_to_process <- document_to_process[1:min(length(document_to_process), max_docs)]
+  # start tagging
+  pb <- progress_bar$new(
+    format = " processing :what [:bar] :percent eta: :eta elapsed :elapsed",
+    clear = FALSE, total = length(document_to_process), width = 100)
+  
+  # for each document
+  for (document_id in document_to_process) {
+    pb$tick(tokens = list(what = sqlite_file))
+    # tag the text and save it in the file
+    res <- tag_text(txt = ipcontent$CONTENT[x])
+    res$id <- ipcontent$ID[x]
+    write.table(x = res, file = , sep = ";")
+  }
+}
+
+# combine and upload to Google Drive
+for (sqlite_file in list.dirs(path = "data", pattern = "^(ps|pi).*sqlite$")) {
+  
+}
+
 # download file from Google Drive
 # library(go)C
 # establish connection to the database
