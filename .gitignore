@@ -8,3 +8,5 @@
 !scripts/*.R
 !*.sqlite
 .Rproj.user
+!.Rprofile
+!renv.lock
