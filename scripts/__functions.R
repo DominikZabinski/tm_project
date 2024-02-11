@@ -115,18 +115,28 @@ update_database_ps <- function(pp_path, conn) {
 #' @examples
 #' tag_text("Litwo, ojczyzno moja")
 tag_text <- function(txt) {
-  tmp_ <- tempfile(fileext = ".txt")
+  # removing '"' since it will mess up processing
   txt <- gsub(pattern = '"', replacement = "", x = txt)
-  res <- system(command = sprintf('curl -XPOST \"localhost:9003/?output_format=conll\" -d \"%s\" -o %s', txt, tmp_), intern = T)
-  res <- readLines(tmp_, encoding = "UTF-8")
+  
+  # write the text to the external file so it will be easier for 'curl' to process it
+  tmp_i <- tempfile(fileext = ".txt")
+  writeLines(text = txt, sep = "\n", con = tmp_i)
+  
+  # create temporary file to store 'curl' results
+  tmp_o <- tempfile(fileext = ".txt")
+  res <- system(command = sprintf('curl -XPOST \"localhost:9003/?output_format=conll\" -d @%s -o %s', tmp_i, tmp_o), intern = T)
+  
+  # read 'curl' response
+  res <- readLines(tmp_o, encoding = "UTF-8")
   res <- res[nchar(res) > 0]
+  # remove intermediate timestamps
   res <- res[regexpr(pattern = "--:--:--", text = res, fixed = T) < 0]
   res <- res[regexpr(pattern = "\tinterp", text = res, fixed = T) < 0]
   if (length(res) == 0) {
     return(data.frame(original = "", tagged = ""))
   }
-  writeLines(text = res, con = tmp_)
-  res <- read.table(file = tmp_, sep = "\t", quote = "")[, c("V1", "V2")]
+  writeLines(text = res, con = tmp_o)
+  res <- read.table(file = tmp_o, sep = "\t", quote = "")[, c("V1", "V2")]
   names(res) <- c("original", "tagged")
   res
 }
