@@ -117,6 +117,11 @@ update_database_ps <- function(pp_path, conn) {
 tag_text <- function(txt) {
   # removing '"' since it will mess up processing
   txt <- gsub(pattern = '"', replacement = "", x = txt)
+  txt <- gsub(pattern = '#', replacement = "", x = txt)
+  
+  # remove urls
+  url_pattern = url_pattern <- "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+  txt <- stringr::str_replace(string = txt, pattern = url_pattern, replacement = "")
   
   # write the text to the external file so it will be easier for 'curl' to process it
   tmp_i <- tempfile(fileext = ".txt")

@@ -5,9 +5,10 @@ library(progress)
 # functions ----
 source("scripts/__functions.R")
 # tagging ----
-max_docs <- 10
+max_docs <- 2000
 project_files <- drive_ls(path = "tm_project")$name
 project_files <- project_files[regexpr(pattern = "^(ps|pi).*sqlite$", text = project_files) > 0]
+project_files <- project_files[regexpr(pattern = "^(pi).*sqlite$", text = project_files) > 0]
 dir.create(path = "data/", showWarnings = FALSE)
 for (sqlite_file in project_files) {
   # download file from Google Drive (if needed)
@@ -70,5 +71,5 @@ for (tagged_dir in list.dirs(path = "data", recursive = FALSE, full.names = FALS
     dbAppendTable(conn = new_connection, name = "tagged", value = data.frame(ID = i, ORG = res$original, TAGGED = res$tagged))
   }
   dbDisconnect(new_connection)
-  drive_upload(media = file.path("data", paste0(tagged_dir, ".sqlite")), path = "tm_project/", name = paste0(tagged_dir, ".sqlite"))
+  drive_upload(media = file.path("data", paste0(tagged_dir, ".sqlite")), path = "tm_project/", name = paste0(tagged_dir, ".sqlite"), overwrite = T)
 }

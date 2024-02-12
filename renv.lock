@@ -149,17 +149,6 @@
       ],
       "Hash": "511bacbfa153a15251166b463b4da4f9"
     },
-    "data.table": {
-      "Package": "data.table",
-      "Version": "1.14.10",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "methods"
-      ],
-      "Hash": "6ea17a32294d8ca00455825ab0cf71b9"
-    },
     "fansi": {
       "Package": "fansi",
       "Version": "1.0.6",
