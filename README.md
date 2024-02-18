@@ -23,10 +23,15 @@ docker run -p 9003:9003 -it djstrong/krnnt:1.0.0
   - one has to have Docker installed on the machine
   - unfortunately it does not work on Macs with M1/M2 processors
 - set up the database with tagged word using `01_tagger.R`
-  - this will create the `<type>_<period>_tagged.sqlite` files in `data` directory with each of the documents from `data/<type>_<period>.sqlite` tagged
+  - this will create the `tagged_<type>_<period>.sqlite` files in `data` directory with each of the documents from `data/<type>_<period>.sqlite` tagged
+
+# Step 3: Download processed data
+
+All the processed data is stored in Google Drive. To make sure one has all necessary files, one has to download them on local machine. To do this run `scripts/02_processed_data_download.R`
 
 # Repository structure
 
+- `renv.*` - directories and files needed for enviroment control via `{renv}` package
 - `scripts/` - directory with all needed scripts
 - `ppc-nanno/` - downloaded from [this link](https://manage.legis.nlp.ipipan.waw.pl/download/ppc-anno.tar.gz)
 - `data/` - processed data in form of .sqlite files

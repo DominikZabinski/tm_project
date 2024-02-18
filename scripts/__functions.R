@@ -92,7 +92,7 @@ update_database_ip <- function(ip_path, conn) {
     if (is.null(ip_transformed[[i]])) ip_transformed[[i]] <- "na"
   }
   new_id <- est_new_id("metadata", conn)
-  DBI::dbAppendTable(conn = conn, name = "metadata", value = data.frame(ID = new_id, AUTHOR = ip_transformed$auth))
+  DBI::dbAppendTable(conn = conn, name = "metadata", value = data.frame(ID = new_id, AUTHOR = ip_transformed$auth, DOC = basename(ip_path)))
   DBI::dbAppendTable(conn = conn, name = "ipcontent", value = data.frame(ID = new_id, CONTENT = ip_transformed$content))
 }
 
@@ -100,7 +100,7 @@ update_database_ps <- function(pp_path, conn) {
   ps_transformed <- transform_pp(pp_path = pp_path)
   new_id <- est_new_id("metadata", conn)
   DBI::dbAppendTable(conn = conn, name = "metadata", 
-                     value = data.frame(ID = new_id, DATE = ps_transformed$date))
+                     value = data.frame(ID = new_id, DATE = ps_transformed$date, DOC = basename(pp_path)))
   DBI::dbAppendTable(conn = conn, name = "pscontent", 
                      value = cbind(data.frame(ID = new_id), ps_transformed$cont))
 }
