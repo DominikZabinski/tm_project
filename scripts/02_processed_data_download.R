@@ -12,5 +12,5 @@ pb <- progress_bar$new(
 for (sqlite_file in project_files) {
   pb$tick(tokens = list(what = sqlite_file))
   # download file from Google Drive 
-  googledrive::drive_download(file = file.path("tm_project", sqlite_file), path = paste0("data/", sqlite_file))
+  googledrive::drive_download(file = file.path("tm_project", sqlite_file), path = paste0("data/", sqlite_file), overwrite = TRUE)
 }
