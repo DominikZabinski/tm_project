@@ -8,6 +8,8 @@ library(cluster)
 library(textnets)
 library(topicmodels)
 library(broom)
+# settings ----
+options(warn = 1)
 # functions ----
 source("scripts/__functions.R")
 
@@ -63,6 +65,7 @@ show_hierarch <- function(cdist, n_clust = 5) {
 # data ----
 # data is stored in .sqlite files: pi_* with raw data and tagged_pi_* with stemmed content
 pi_files <- list.files("data", pattern = "^(pi_)")
+pi_files <- pi_files[1:3]
 all_pi <- do.call(rbind, lapply(X = pi_files, FUN = function(i){
   mydb <- dbConnect(RSQLite::SQLite(), file.path("data", i))
   this_cont <- dbGetQuery(conn = mydb, statement = "select metadata.*, ipcontent.content from ipcontent left join metadata on metadata.id = ipcontent.id")
@@ -81,12 +84,140 @@ all_pi <- all_pi %>%
 all_pi %>% group_by(period) %>% 
   summarise(count = n(), autohrs = length(unique(AUTHOR)), av_len = mean(len), sd_len = sd(len), min_len = min(len), max_len = max(len))
 
-# there are documents with 0 length - remove those
-all_pi <- all_pi %>% filter(len > 0)
+# add date
+last_part <- 24
+pp <- all_pi$CONTENT %>% substr(start = nchar(.) - last_part, nchar(.))
+# because of bad construciton of text or simply mistakes
+wyjatki <- list("923" = "14 lipca 1998 r.", 
+                "2707" = "9 lipca 1999 r.",
+                "4218" = "11 maja 2000 r.",
+                "5364" = "6 listopada 2000 r.",
+                "5493" = "27 listopada 2000 r.",
+                "7336" = "10 sierpnia 2001 r.",
+                "7447" = "6 listopada 2001 r.",
+                "7524" = "15 listopada 2001 r.",
+                "7797" = "10 stycznia 2002 r.",
+                "8140" = "18 lutego 2002 r.",
+                "8521" = "4 kwietnia 2002 r.",
+                "8530" = "5 kwietnia 2002 r.",
+                "8580" = "16 kwietnia 2002 r.",
+                "9031" = "18 czerwca 2002 r.",
+                "9820" = "22 listopada 2002 r.",
+                "10262" = "31 stycznia 2003 r.",
+                "10575" = "4 marca 2003 r.",
+                "11520" = "12 czerwca 2003 r.",
+                "11694" = "7 lipca 2003 r.",
+                "11086" = "23 kwietnia 2003 r.",
+                "12516" = "26 września 2003 r.",
+                "16390" = "15 listopada 2004 r.",
+                "16452" = "17 listopada 2004 r.",
+                "17594" = "22 kwietnia 2005 r.",
+                "17782" = "20 maja 2005 r.",
+                "17783" = "20 maja 2005 r.",
+                "18148" = "8 lipca 2005 r.",
+                "18744" = "23 grudnia 2005 r.",
+                "18850" = "29 grudnia 2005 r.",
+                "18919" = "8 marca 2006 r.",
+                "19499" = "26 stycznia 2006 r.",
+                "19904" = "7 marca 2006 r.",
+                "20096" = "10 marca 2006 r.",
+                "20219" = "15 marca 2006 r.",
+                "20660" = "30 marca 2006 r.",
+                "21786" = "8 czerwca 2006 r.",
+                "21877" = "19 czerwca 2006 r.",
+                "22051" = "23 czerwca 2006 r.",
+                "22592" = "20 lipca 2006 r.",
+                "22593" = "20 lipca 2006 r.",
+                "22595" = "20 lipca 2006 r.",
+                "24187" = "8 grudnia 2006 r.",
+                "24633" = "17 stycznia 2007 r.",
+                "24685" = "15 stycznia 2007 r.",
+                "24861" = "22 stycznia 2007 r.",
+                "25075" = "13 lutego 2007 r.",
+                "26774" = "24 maja 2007 r.",
+                "26395" = "27 kwietnia 2007 r.",
+                "27141" = "18 czerwca 2007 r.",
+                "27756" = "22 sierpnia 2007 r.")
 
-# basic information once more
-all_pi %>% group_by(period) %>% 
-  summarise(count = n(), autohrs = length(unique(AUTHOR)), av_len = mean(len), sd_len = sd(len), min_len = min(len), max_len = max(len))
+pp[as.numeric(names(wyjatki))] <- unlist(wyjatki)
+
+pp2 <- gsub(pattern = "(r|roku)\\s*\\.*\\,*$", replacement = "", x = pp)
+pp2 <- trimws(pp2)
+years <- as.numeric(substr(pp2, regexpr(pattern = "\\d+\\.*$", text = pp2), nchar(pp2)))
+if (any(is.na(years))) {
+  idx <- which(is.na(years))
+  message(length(idx))
+  pp2[idx[1:min(10, length(idx))]]
+}
+
+if (!all(years %in% c(1997:2007))) {
+  idx <- which(!years %in% c(1997:2007))
+  message(length(idx))
+  pp2[idx[1:min(10, length(idx))]]
+}
+
+months_vec <- rep(0, length = length(pp2))
+pp2 <- trimws(substr(pp2, 1, nchar(pp2) - 4))
+miesiace <- list(
+  "1" = "stycznia",
+  "2" = c("lutego", "luty"),
+  "3" = "marca",
+  "4" = c("kwietnia", "kwietnie", "kwitnia", "kwietna"),
+  "5" = "maja",
+  "6" = "czerwca",
+  "7" = "lipca", 
+  "8" = "sierpnia",
+  "9" = c("września", "wrzesień"),
+  "10" = "października",
+  "11" = c("listopada", "listopad"),
+  "12" = "grudnia"
+)
+for (m in 1:length(miesiace)) {
+  vals <- regexpr(pattern = sprintf("(%s)", paste0(miesiace[[m]], collapse = "|")), text = pp2)
+  idx <- which(vals > 0)
+  months_vec[idx] <- as.numeric(names(miesiace)[m])
+  pp2[idx] <- substr(pp2[idx], 1, vals[idx] -1)
+}
+if (!all(months_vec %in% c(1:12))) {
+  idx <- which(!months_vec %in% c(1:12))
+  message(length(idx))
+  pp2[idx[1:min(10, length(idx))]]
+}
+pp2 <- trimws(pp2)
+days_vec <- as.numeric(substr(pp2, regexpr(pattern = "\\d+$", text = pp2), nchar(pp2)))
+if (!all(days_vec %in% c(1:31))) {
+  idx <- which(!days_vec %in% c(1:31))
+  message(length(idx))
+  pp2[idx[1:min(10, length(idx))]]
+}
+
+all_pi$date <- as.Date(sprintf("%s-%02d-%02d", years, months_vec, days_vec))
+
+all_pi %>% 
+  left_join(y = data.frame(period = c("1997-2001", "2001-2005", "2005-2007"), start_date = as.Date(c("1997-10-20", "2001-10-19", "2005-10-19"))), by = "period") %>% 
+  mutate(days_by = as.numeric(date - start_date)) %>% 
+  filter(days_by < 0)
+
+all_pi %>% 
+  left_join(y = data.frame(period = c("1997-2001", "2001-2005", "2005-2007"), start_date = as.Date(c("1997-10-20", "2001-10-19", "2005-10-19"))), by = "period") %>% 
+  mutate(days_by = as.numeric(date - start_date)) %>% 
+  group_by(period) %>% 
+  summarise(sum(days_by < 0))
+
+all_pi %>% group_by(date) %>% 
+  summarise(count = n()) %>% 
+  ggplot() +
+  geom_col(aes(x = date, y = count))
+
+# dla kazdej kadencji dac date rozpoczecia, policzyc ile dni minelo od rozpoaczecia i zrobic facet wrap wg tego (zeby latwiej porownac miedzy soba)
+
+all_pi %>% 
+  left_join(y = data.frame(period = c("1997-2001", "2001-2005", "2005-2007"), start_date = as.Date(c("1997-10-20", "2001-10-19", "2005-10-19"))), by = "period") %>% 
+  mutate(days_by = as.numeric(date - start_date)) %>% 
+  group_by(days_by, period) %>% 
+  summarise(count = n()) %>% 
+  ggplot(aes(x = days_by, y = count, group = period, color = period)) +
+  geom_point() + geom_smooth()
 
 # those supposed to be interpelacje poselskie. w Polskim Sejmie jest ich 460, zas w kazdym z lat jest wiecej
 posl_json <- jsonlite::fromJSON(txt = "dicts/poslowie.json")
@@ -109,7 +240,7 @@ authors %>% group_by(not_found = is.na(ugr)) %>% summarise(k = length(unique(AUT
 # 1 in 6
 
 # I've tagged already
-pi_tagged_files <- list.files("data", pattern = "^(tagged_pi_)")
+pi_tagged_files <- paste0("tagged_", pi_files)
 all_pi_tagged <- do.call(rbind, lapply(X = pi_tagged_files, FUN = function(i){
   mydb <- dbConnect(RSQLite::SQLite(), file.path("data", i))
   this_cont <- dbGetQuery(conn = mydb, statement = "select * from tagged")
@@ -123,9 +254,10 @@ head(all_pi_tagged)
 # the data is stripped from whitespaces and removed punctuation, lowercased
 
 # data 2 ----
-# create content
+# create content from tagged
 all_pi_tagged <- all_pi_tagged %>% 
   group_by(period, ID) %>% 
+  anti_join(y = , by = )
   summarise(text = paste0(TAGGED, collapse = " ")) %>% 
   mutate(id = paste0(period, ID)) %>% 
   left_join(y = all_pi %>% select(ID, period, AUTHOR), by = c("ID", "period"))
@@ -182,11 +314,11 @@ cluster::clusplot(as.matrix(cdist), kfit$cluster, color=T, shade=T, labels=2, li
 prepped_sotu <- textnets::PrepText(to_analyze,
                                    groupvar = "AUTHOR",
                                    textvar = "text",
-                         node_type = "groups",
-                         tokenizer = "words",
-                         pos = "nouns",
-                         remove_stop_words = FALSE,
-                         compound_nouns = FALSE)
+                                   node_type = "groups",
+                                   tokenizer = "words",
+                                   pos = "nouns",
+                                   remove_stop_words = FALSE,
+                                   compound_nouns = FALSE)
 sotu_text_network <- CreateTextnet(tidytextobject = prepped_sotu)
 
 # na jakiej podstawie alpha i label_degree_cut? potrzebuje rozkladow dla obiektu zawierajacego graf
@@ -245,3 +377,7 @@ ggplot(
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
   coord_flip()
+
+
+# kroczaco czestosc slow
+# podzial na 3 rzady - czy sa znaczne roznice?
