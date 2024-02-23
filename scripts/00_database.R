@@ -79,7 +79,7 @@ all_pi <- all_pi %>%
 all_pi %>% group_by(period) %>% 
   summarise(count = n(), autohrs = length(unique(AUTHOR)), av_len = mean(len), sd_len = sd(len), min_len = min(len), max_len = max(len))
 
-# there is some documents with missing content
+# there is some documents with missing content - it will be dealt in later step
 
 # processing data regarding plenary session (posiedzenia parlamentarne) ----
 
@@ -123,5 +123,6 @@ for (period in periods_avail) {
   file_name <- paste0("ps_", period, ".sqlite")
   drive_upload(media = file.path("data/", file_name),
                path = "tm_project",
-               name = file_name)
+               name = file_name, 
+               overwrite = TRUE)
 }
