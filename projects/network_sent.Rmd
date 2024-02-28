@@ -1,0 +1,1114 @@
+---
+title: "Network analyis"
+subtitle: "Case of Polish Sejm interpelations"
+author: "306068 Dominik Zabinski"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r knitr_setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE)
+# libraries ----
+library(DBI)
+library(tidyverse)
+library(textmineR)
+library(wordcloud)
+library(cluster)
+library(textnets)
+library(topicmodels)
+library(broom)
+library(ggridges)
+library(igraph)
+library(kableExtra) 
+
+# functions ----
+dtm_from_text <- function(to_analyze, text_col = "text", id_col = "id") {
+  CreateDtm(doc_vec = to_analyze[[text_col]], # character vector of documents
+            doc_names = to_analyze[[id_col]], # document names
+            ngram_window = c(1, 2), # minimum and maximum n-gram length
+            stopword_vec = polish_stop_words(),
+            lower = FALSE, # lowercase - this is the default value
+            remove_punctuation = FALSE, # punctuation - this is the default
+            remove_numbers = TRUE, # numbers - this is the default
+            verbose = FALSE, # Turn off status bar for this demo
+            cpus = 2) # def
+}
+
+calc_cdist <- function(dtm, tf_mat) {
+  tfidf <- t(dtm[ , tf_mat$term ]) * tf_mat$idf
+  tfidf <- t(tfidf)
+  csim <- tfidf / sqrt(rowSums(tfidf * tfidf))
+  csim <- csim %*% t(csim)
+  cdist <- as.dist(1 - csim)
+  cdist
+}
+
+show_top <- function(tf_mat, wt = "term_freq", title = "some title") {
+  # a doc_freq?
+  tf_mat %>% 
+    select(wt = .data[[wt]], term) %>% 
+    top_n(n = 10, wt = wt) %>% 
+    ggplot(mapping = aes(x = term, y = wt)) + 
+    geom_col() +
+    coord_flip() +
+    labs(title = title, y = wt)
+}
+
+calc_clust <- function(cdist, n_clust = 5) {
+  hc <- hclust(cdist, "ward.D")
+  clustering <- cutree(hc, n_clust)
+  clustering
+}
+
+show_hierarch <- function(cdist, n_clust = 5) {
+  # agglomerative hierarchical clustering
+  # Ward's method as a merge rule
+  # cut the dendrogram for 5 clusters for example
+  clustering <- calc_clust(cdist, n_clust)
+  hc <- hclust(cdist, "ward.D")
+  plot(hc, main = "Hierarchical clustering of 100 NIH grant abstracts",
+       ylab = "", xlab = "", yaxt = "n")
+  
+  rect.hclust(hc, n_clust, border = "red")
+}
+
+show_ridge <- function(summ_data, tt, as_height = "count") {
+  summ_data %>%
+    filter(TAGGED %in% tt) %>% 
+    mutate(as_height = .data[[as_height]]) %>% 
+    ggplot(aes(x = date, height = as_height, y = TAGGED, group = TAGGED)) +
+    ggridges::geom_ridgeline(scale = .01)  
+}
+
+polish_stop_words <- function() {
+  base_stop <- c(
+    # A
+    "a", "aby", "ach", "acz", "aczkolwiek", "aj", "albo", "ale", "ależ", "ani", "aż", "art", 
+    # B
+    "bardziej", "bardzo", "bo", "bowiem", "by", "byli", "bynajmniej", "być", "był", "była", "było", "były", "będzie", 
+    "będą", 
+    # C
+    "cali", "cała", "cały", "ci", "cię", "ciebie", "co", "cokolwiek", "coś", "czasami", "czasem", "czemu", "czy", 
+    "czyli", 
+    # D
+    "daleko", "dla", "dlaczego", "dlatego", "do", "dobrze", "dokąd", "dość", "dużo", "dwa", "dwaj", "dwie", "dwoje", 
+    "dziś", "dzisiaj", 
+    # G
+    "gdy", "gdyby", "gdyż", "gdzie", "gdziekolwiek", "gdzieś", 
+    # I
+    "i", "ich", "ile", "im", "inna", "inne", "inny", "innych", "iż",
+    # J
+    "ja", "ją", "jak", "jakaś", "jakby", "jaki", "jakichś", "jakie", "jakiś", "jakiż", "jakkolwiek", "jako", "jakoś", 
+    "je", "jeden", "jedna", "jedno", "jednak", "jednakże", "jego", "jej", "jemu", "jest", "jestem", "jeszcze", "jeśli", 
+    "jeżeli", "już", "ją", 
+    # K
+    "każdy", "kiedy", "kilka", "kimś", "kto", "ktokolwiek", "ktoś", "która", "które", "którego", "której", "który", 
+    "których", "którym", "którzy", "ku", 
+    # L
+    "lat", "lecz", "lub", 
+    # M
+    "ma", "mają", "mało", "mam", "mi", "mimo", "między", "mną", "mnie", "mogą", "moi", "moim", "moja", "moje", "może", 
+    "możliwe", "można", "mój", "mu", "musi", "my", 
+    # N
+    "na", "nad", "nam", "nami", "nas", "nasi", "nasz", "nasza", "nasze", "naszego", "naszych", "natomiast", 
+    "natychmiast", "nawet", "nią", "nic", "nich", "nie", "niech", "niego", "niej", "niemu", "nigdy", "nim", "nimi", 
+    "niż", "no", 
+    # O
+    "o", "obok", "od", "około", "on", "ona", "one", "oni", "ono", "oraz", "oto", "owszem", 
+    # P
+    "pan", "pana", "pani", "po", "pod", "podczas", "pomimo", "ponad", "ponieważ", "powinien", "powinna", "powinni", 
+    "powinno", "poza", "prawie", "przecież", "przed", "przede", "przedtem", "przez", "przy", 
+    # R
+    "roku", "również", 
+    # S
+    "sam", "sama", "są", "się", "skąd", "sobie", "sobą", "sposób", "swoje", 
+    # T
+    "ta", "tak", "taka", "taki", "takie", "także", "tam", "te", "tego", "tej", "temu", "ten", "teraz", "też", "tę", "to", 
+    "tobą", "tobie", "toteż", "trzeba", "tu", "tutaj", "twoi", "twoim", "twoja", "twoje", "twym", "twój", "ty", "tych", 
+    "tylko", "tym", 
+    # U
+    "u", 
+    # W
+    "w", "wam", "wami", "was", "wasz", "wasza", "wasze", "we", "według", "wiele", "wielu", "więc", "więcej", "wszyscy", 
+    "wszystkich", "wszystkie", "wszystkim", "wszystko", "wtedy", "wy", "właśnie", 
+    # Z
+    "z", "za", "zaś", "zapewne", "zawsze", "ze", "zł", "znowu", "znów", "został", 
+    # Ż
+    "żaden", "żadna", "żadne", "żadnych", "że", "żeby")
+  c(base_stop, c("ad", "vocem"))
+}
+
+polish_stop_words_df <- function(column_name = "lemma") {
+  data.frame(matrix(data = polish_stop_words(), ncol = 1, dimnames = list(NULL, column_name)))
+}
+
+convert_to_igraph <- function(text_network_graph, edge_df) {
+  # convert to igraph
+  ll <- igraph::graph(edges = igraph::as_edgelist(text_network_graph))
+  # assign weights
+  E(ll)$weight <- E(text_network_graph)$weight
+  # assign colors
+  V(ll)$color <- match_colors(x = names(V(ll)), tt = edge_df)
+  # assign size
+  V(ll)$ip <- edge_df[match(x = names(V(ll)), table = edge_df$AUTHOR), ]$k
+  simplify(graph = ll, remove.multiple = T, remove.loops = T, 
+           edge.attr.comb=c(weight="sum", type="ignore") )
+  
+}
+
+plot_graph <- function(graph_to_plot, 
+                       scale_vertex_size = c(2, 20), 
+                       edge_weight_limit = quantile(E(graph_to_plot)$weight, 0.5),
+                       idx_show_label = degree(graph_to_plot) > quantile(degree(graph_to_plot), .9),
+                       scale_edge_size = c(2, 10)) {
+  E(graph_to_plot)$arrow.mode="-"
+  E(graph_to_plot)$lty <- 1
+  E(graph_to_plot)[ weight <  edge_weight_limit]$lty <- 0
+  
+  set.seed(306068)
+  plot(graph_to_plot, 
+       vertex.size = scale_to(V(graph_to_plot)$ip, range(V(graph_to_plot)$ip), scale_vertex_size),
+       vertex.label = ifelse(idx_show_label, names(V(graph_to_plot)), NA),
+       vertex.label.color = "black", 
+       vertex.label.dist = 1.5,
+       vertex.color = V(graph_to_plot)$color, 
+       vertex.frame.color = NA,
+       mark.border = NA,
+       edge.width = scale_to(E(graph_to_plot)$weight, range(E(graph_to_plot)$weight), scale_edge_size),
+       edge.color = "grey90",
+       layout = layout_(graph_to_plot, with_dh())
+  )
+}
+
+scale_to <- function(x, ab, cd) {
+  min(cd) + (max(cd) - min(cd)) * (x - min(ab)) / (max(ab) - min(ab))
+}
+match_colors <- function(x, tt) {
+  ugr <- tt[match(x = x, table = tt$AUTHOR), ]$ugr
+  avail_colors <- c(RColorBrewer::brewer.pal(8, "Dark2"), RColorBrewer::brewer.pal(8, "Set3"))
+  nn <- unique(tt$ugr)
+  avail_colors <- avail_colors[1:length(nn)]
+  avail_colors_df <- data.frame(cl = avail_colors, ugr = nn)
+  avail_colors_df[match(x = ugr, table = avail_colors_df$ugr),]$cl
+}
+get_edge_top_weights <- function(graph, n_n = 3) {
+  cbind(as_edgelist(graph) %>% as.data.frame(), data.frame(w = E(graph)$weight)) %>% 
+    top_n(n = n_n, wt = w)
+}
+```
+
+# Introduction
+
+The Polish parliament serves as a vibrant arena for political discourse, where members engage in various forms of communication to address pressing issues and hold the government accountable. One such crucial mechanism is interpellation, where parliamentarians pose questions to government officials, seeking clarifications or initiating discussions on policies, decisions, or matters of public concern.
+
+## Purpose of the project
+
+This text mining project focusing on interpellation within the Polish parliament integrates a analytical approach of network analysis. Through network analysis, I aim to map the intricate relationships among parliamentarians based on their interpellation activities, unveiling patterns of collaboration, influence, and ideological alignment within the legislative body. By examining the network structure, centrality measures, and clustering tendencies, I seek to elucidate the underlying dynamics of political discourse and coalition-building strategies. 
+
+## Main assumptions
+
+1. There exists a core group of parliamentarians who are consistently central to the interpellation network, indicating their significant role in shaping debates, garnering support for policies, and influencing legislative outcomes.
+2. There is a tendency for same party members to be close in text network.
+
+# Data
+
+## Description of the data set
+
+Data comes from [The Polish Parliamentary Corpus / Korpus Dyskursu Parlamentarnego repository](https://git.nlp.ipipan.waw.pl/PPC/ppc). That repository contains both Sejm and Senat proceedings, interpellation etc. from 1919 to 2023. The analysis is limited to 3 parliament terms (1997-2001, 2001-2005 and 2005-200) and only to data from Member of Parliament interpellations. Based on the files stored in that repository the dataset for the analysis (both the content and available metadata) has been created and preprocessed before the analysis via external scripts [link to reposiotry of this project](https://github.com/DominikZabinski/tm_project)). To stem data [KRNNT](https://github.com/kwrobel-nlp/krnnt/tree/master) tool was used. Preprocessed files are available on [Google Drive](https://drive.google.com/drive/folders/1cEnpzzT55tsJe8YPHJq4h-1Necn_C8_4).
+
+## Preparation of data for modeling
+
+There will be three main steps:
+
+- retrieve date of interpellation since it was available in metadata
+- make sure author is ok - it is needed for proper network analysis
+- clean stemmed data
+
+### Load data
+
+First step - load data from preprocessed files
+
+```{r, read_data}
+pi_files <- list.files("data", pattern = "^(pi_)")
+all_pi <- do.call(rbind, 
+                  lapply(X = pi_files, FUN = function(i){
+                    mydb <- dbConnect(RSQLite::SQLite(), file.path("data", i))
+                    this_cont <- dbGetQuery(conn = mydb, 
+                                            statement = "select metadata.*, ipcontent.content from ipcontent left join metadata on metadata.id = ipcontent.id")
+                    dbDisconnect(mydb)
+                    this_cont$period <- gsub("pi_", replacement = "", x = gsub(pattern = ".sqlite", replacement = "", x = i))
+                    this_cont
+                  }))
+# add information about length of each document
+all_pi <- all_pi %>% 
+  mutate(len = nchar(CONTENT))
+
+# create dataset with start and end of each period
+period_bands <- data.frame(period = c("1997-2001", "2001-2005", "2005-2007"), 
+                           start_date = as.Date(c("1997-10-20", "2001-10-19", "2005-10-19")),
+                           end_date = as.Date(c("2001-10-18", "2005-10-18", "2007-09-07")))
+```
+
+### Create date of interpellation
+
+Second step - create date of creation of each interpellation
+
+```{r, create_date}
+# assumption - each document ends in date passed in that format: <day> <month as a word> <year>
+last_part_len <- 24
+vec_to_extract_dates <- all_pi$CONTENT %>% substr(start = nchar(.) - last_part_len, nchar(.))
+# there are some cases that will be overwritten and not treated with general approach (59 out of 28074 [0.2%]):
+#   because the last part of document did not include date (e.g. it consists of footnotes of some sort)
+#   because there were mistakes (e.g. year 3000)
+list_exceptions <- jsonlite::fromJSON(txt = "dicts/pi_dates.json")
+vec_to_extract_dates[match(x = names(list_exceptions), table = all_pi$DOC)] <- unlist(list_exceptions)
+
+# remove last part of date
+vec_to_extract_dates <- gsub(pattern = "(r|roku)\\s*\\.*\\,*$", replacement = "", x = vec_to_extract_dates)
+vec_to_extract_dates <- trimws(vec_to_extract_dates)
+# extract year
+years <- as.numeric(substr(vec_to_extract_dates, regexpr(pattern = "\\d+\\.*$", text = vec_to_extract_dates), nchar(vec_to_extract_dates)))
+# check if everything is ok
+if (any(is.na(years))) {
+  idx <- which(is.na(years))
+  message(length(idx))
+  vec_to_extract_dates[idx[1:min(10, length(idx))]]
+}
+
+if (!all(years %in% c(1997:2007))) {
+  idx <- which(!years %in% c(1997:2007))
+  message(length(idx))
+  vec_to_extract_dates[idx[1:min(10, length(idx))]]
+}
+
+# remove year to ease the process
+vec_to_extract_dates <- trimws(substr(vec_to_extract_dates, 1, nchar(vec_to_extract_dates) - 4))
+# extract month
+months_vec <- rep(0, length = length(vec_to_extract_dates))
+months_dict <- list("1" = "stycznia",
+                    "2" = c("lutego", "luty"),
+                    "3" = "marca",
+                    "4" = c("kwietnia", "kwietnie", "kwitnia", "kwietna"),
+                    "5" = "maja",
+                    "6" = "czerwca",
+                    "7" = "lipca", 
+                    "8" = "sierpnia",
+                    "9" = c("września", "wrzesień"),
+                    "10" = "października",
+                    "11" = c("listopada", "listopad"),
+                    "12" = "grudnia")
+
+for (m in 1:length(months_dict)) {
+  vals <- regexpr(pattern = sprintf("(%s)", paste0(months_dict[[m]], collapse = "|")), text = vec_to_extract_dates)
+  idx <- which(vals > 0)
+  months_vec[idx] <- as.numeric(names(months_dict)[m])
+  vec_to_extract_dates[idx] <- substr(vec_to_extract_dates[idx], 1, vals[idx] -1)
+}
+
+# check if everything is ok
+if (!all(months_vec %in% c(1:12))) {
+  idx <- which(!months_vec %in% c(1:12))
+  message(length(idx))
+  vec_to_extract_dates[idx[1:min(10, length(idx))]]
+}
+
+vec_to_extract_dates <- trimws(vec_to_extract_dates)
+# extract day
+days_vec <- as.numeric(substr(vec_to_extract_dates, regexpr(pattern = "\\d+$", text = vec_to_extract_dates), nchar(vec_to_extract_dates)))
+
+# check if everything is ok
+if (!all(days_vec %in% c(1:31))) {
+  idx <- which(!days_vec %in% c(1:31))
+  message(length(idx))
+  vec_to_extract_dates[idx[1:min(10, length(idx))]]
+}
+
+# add to dataset
+all_pi$date <- as.Date(sprintf("%s-%02d-%02d", years, months_vec, days_vec))
+```
+
+Check if all is ok - each date should be between start and end of each period
+
+```{r, check_date_1}
+all_pi %>% 
+  left_join(y = period_bands, by = "period") %>% 
+  mutate(days_after_start = as.numeric(date - start_date)) %>% 
+  filter(days_after_start < 0) %>% 
+  kable() %>%
+    kable_styling()
+```
+
+But sometimes interpellation is written in a period **t** is delivered to Sejm in period **t-1**.
+
+```{r, check_date_2}
+all_pi %>% 
+  left_join(y = period_bands, by = "period") %>% 
+  mutate(days_before_end = as.numeric(end_date - date)) %>% 
+  filter(days_before_end < 0) %>% 
+  summarise(n(), min(days_before_end), median(days_before_end), max(days_before_end)) %>% 
+  kable() %>%
+    kable_styling()
+```
+
+### Clean up authors
+
+Third step - cleaning up data regarding author of interpellation
+
+```{r, poslowie_dict_0}
+all_pi %>% group_by(period) %>% 
+  summarise(n_authors = length(unique(AUTHOR))) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+This is strange, those supposed to be parliamentary interpellations. In Polish Sejm there is 460 members, but data for each term suggest there are many more of them.
+
+Couple things to consider: 
+
+- member of parliament was sometimes described with first and second name ('Adam Bielan' and 'Adam Jerzy Bielan' is the same person)
+- couple of members cosign one interpellation (e.g. 'Adam Bielan i Zbigniew Ziobro')
+- in course of term member's list might change due to different things (death, resigning etc.)
+
+Load the member list. This is a list of member for each term at the end of the term.
+
+```{r, poslowie_dict_1}
+# for further analysis
+posl_json <- jsonlite::fromJSON(txt = "dicts/poslowie.json")
+posl_df <- do.call(rbind, 
+                   lapply(names(posl_json),
+                          FUN = function(i){
+                            posl_json_period <- posl_json[[i]]
+                            posl_df <- do.call(rbind,
+                                               lapply(1:length(posl_json_period), 
+                                                      FUN = function(j){
+                                                        nn <- names(posl_json_period)[j]
+                                                        ps <- unlist(posl_json_period[[nn]])
+                                                        data.frame(AUTHOR = ps, ugr = names(posl_json_period)[j])
+                                                      }))
+                            row.names(posl_df) <- NULL
+                            posl_df$period <- i
+                            posl_df
+                          }))
+```
+
+Is everything is ok with that data?
+
+```{r, poslowie_dict_2}
+posl_df %>% 
+  group_by(period) %>% 
+  summarise(n = n(), uq = length(unique(AUTHOR)), any_duplicates = n > uq, duplicate_members = paste0(AUTHOR[duplicated(AUTHOR)], collapse = ", ")) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+There are duplicates in two periods. Let see how many interpellations are for those members.
+
+```{r, poslowie_dict_3}
+all_pi %>% filter(regexpr(text = AUTHOR, pattern = "(Ewa Janik)|(Maciej Jankowski)") > 0) %>% 
+  group_by(period, AUTHOR) %>% summarise(n()) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+Apparently there are only 2 (out of 28k) observations are for the periods where there are mulitple names on member list. For simplicity I'll remove one of those members.
+
+```{r, poslowie_dict_4}
+posl_df <- posl_df %>% filter(!(AUTHOR == "Maciej Jankowski" & ugr == "Posłowie niezrzeszeni" & period == "1997-2001"))
+posl_df <- posl_df %>% filter(!(AUTHOR == "Ewa Janik" & period == "2001-2005"))
+posl_df <- rbind(posl_df, data.frame(AUTHOR = "Ewa Janik", period = "2001-2005", ugr = "Klub Parlamentarny Sojuszu Lewicy Demokratycznej"))
+```
+
+Check how many interpellations are not accounted for author's party
+
+```{r, poslowie_dict_5}
+all_pi %>% 
+  left_join(posl_df, by = c("AUTHOR", "period")) %>% 
+  group_by(period) %>% 
+  summarise(n_mem = n_distinct(AUTHOR), count = n(), without_party = sum(is.na(ugr)) / count, 
+            n_mem_without_party = length(unique(AUTHOR[is.na(ugr)])), without_part_count = n_mem_without_party / n_mem) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+- good news: between 1 in 7 and 1 in 5 interpollation is not accounted for auther (not great, not terrible) (column **without_party**)
+- bad news: half of authors are not recognized (column **without_part_count**)
+
+Let see which authors do not rest in posel list
+
+```{r, poslowie_dict_6}
+all_pi %>%  
+  left_join(posl_df, by = c("AUTHOR", "period")) %>% 
+  group_by(AUTHOR, ugr) %>% 
+  summarise(k = n()) %>% 
+  filter(is.na(ugr)) %>% 
+  head() %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+As stated before 
+
+- member was sometimes described with first and second name ('Adam Bielan' vs 'Adam Jerzy Bielan')
+- couple of members cosign one interpellation (e.g. 'Adam Bielan i Zbigniew Ziobro')
+
+```{r, poslowie_dict_7}
+# create dict author + period
+un_authors <- all_pi %>% select(AUTHOR, period) %>% unique()
+un_authors <- un_authors %>% left_join(y = posl_df, by = c("AUTHOR", "period"))
+```
+
+To clean up that mess I'll introduce:
+
+- one manual change 
+- assume that first member that signs the interpellation is its author
+- if posel uses second name shorten it to first name and surname
+
+```{r, poslowie_dict_9}
+# some manual changes
+un_authors$AUTHOR[un_authors$AUTHOR == "łukasz Zbonikowski"] <- "Łukasz Zbonikowski"
+# assumption - if multiple poeple sign a interplataion - assign it to the first on the list (most proboalby person responisbile for phrasing)
+#   most likely it will be Jan Kowalski i Zbigniew Nowak (so they are separated by small i)
+# if posel uses second name - shorten it to first name and surname
+un_authors$stripped <- lapply(X = un_authors$AUTHOR, 
+                              FUN = function(i){
+                                if (i == "na") return(i)
+                                gg <- strsplit(i, split = "(\\s|Senator|Poseł|Posel|Poslowie|Z należytym szacunkiem)")[[1]]
+                                gg <- trimws(gg)
+                                gg <- gg[nchar(gg) > 0]
+                                ggs <- regexpr(pattern = "^[[:upper:]]", text = gg) > 0
+                                first_zero <- which(!ggs)[1]
+                                if (is.na(first_zero)) first_zero <- length(ggs) + 1
+                                last_one <- max(which(ggs[1:(first_zero - 1)]))
+                                paste0(gg[c(1, last_one)], collapse = " ")
+                              }) %>% unlist()
+# join it with party dictionairy
+un_authors2 <- un_authors %>% 
+  left_join(y = posl_df %>% 
+              select(stripped = AUTHOR, period, ugr2 = ugr), by = c("stripped", "period")) 
+
+un_authors2$ugr2 <- gsub(pattern = "^(Klub Parlamentarny)|(Koło Parlamentarne)|(Koło Poselskie)|(Klub Poselski)", replacement = "KP", x = un_authors2$ugr2)
+
+# repeat manual changes and join with text data and see if that he
+all_pi$AUTHOR[all_pi$AUTHOR == "łukasz Zbonikowski"] <- "Łukasz Zbonikowski"
+
+all_pi %>%
+  left_join(un_authors2 %>% select(AUTHOR, period, ugr), by = c("AUTHOR", "period")) %>%
+  left_join(un_authors2 %>% select(AUTHOR, stripped, period, ugr2) %>% unique(), by = c("AUTHOR", "period")) %>%
+  group_by(period) %>% 
+  summarise(count_original = n_distinct(AUTHOR), count_clean = n_distinct(stripped), count_int = n(), 
+            perc_without_original = sum(is.na(ugr)) / count_int, perc_without_clean = sum(is.na(ugr2)) / count_int) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+After clean up, instead of 1 in 5 interpellations without an author now I have only 1 in 12 missing.
+
+```{r, poslowie_dict_10}
+all_pi <- all_pi %>% 
+  left_join(un_authors2 %>% select(AUTHOR, AUTHOR_CLEAN = stripped, period, party = ugr2) %>% unique(), by = c("AUTHOR", "period"))
+```
+
+### Clean stemmed data
+
+The data was stem outsied the script - load it
+
+```{r, tagged_1}
+# I've tagged already
+pi_tagged_files <- paste0("tagged_", pi_files)
+all_pi_tagged <- do.call(rbind, 
+                         lapply(X = pi_tagged_files, 
+                                FUN = function(i){
+                                  mydb <- dbConnect(RSQLite::SQLite(), file.path("data", i))
+                                  this_cont <- dbGetQuery(conn = mydb, statement = "select * from tagged")
+                                  dbDisconnect(mydb)
+                                  this_cont$period <- gsub("tagged_pi_", replacement = "", x = gsub(pattern = ".sqlite", replacement = "", x = i))
+                                  this_cont
+                                }))
+
+head(all_pi_tagged, 6) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+The data is stripped from whitespaces and lowercased (unless it is a recognizable name). How many tags (stemmed entities) do I have?
+
+```{r, tagged_2}
+n_distinct(all_pi_tagged$TAGGED)
+```
+
+Cleaning:
+
+- remove words that correspond to dates
+- remove polish stop words
+- remove number (in several formats)
+- remove dates (in several formats)
+- remove words that are most likely in a greeting or in the signature part of interpellation
+
+```{r, tagged_3}
+# cleaning
+all_pi_tagged_clean <- all_pi_tagged %>% 
+  # remove part with date
+  anti_join(y = data.frame(TAGGED = c("dzień", "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec", "lipiec", "sierpień", "wrzesień",
+                                      "październik", "listopad", "grudzień", "rok")), by = "TAGGED") %>% 
+  # remove stopwords
+  anti_join(y = polish_stop_words_df("TAGGED"))
+
+# remove numbers
+all_pi_tagged_clean <- all_pi_tagged_clean[regexpr(pattern = "^\\d+$", text = all_pi_tagged_clean$TAGGED) < 0, ]
+
+# %, +
+all_pi_tagged_clean <- all_pi_tagged_clean[regexpr(pattern = "^\\W$", text = all_pi_tagged_clean$TAGGED) < 0, ]
+
+# numbers with comma as decimal point
+all_pi_tagged_clean <- all_pi_tagged_clean[regexpr(pattern = "^\\d+,\\d+$", text = all_pi_tagged_clean$TAGGED) < 0, ]
+
+# numbers with dot as decimal point
+all_pi_tagged_clean <- all_pi_tagged_clean[regexpr(pattern = "^\\d+\\.\\d+$", text = all_pi_tagged_clean$TAGGED) < 0, ]
+
+# remove dates xx.xx.xxxx
+all_pi_tagged_clean <- all_pi_tagged_clean[regexpr(pattern = "^\\d{1,2}\\.(0\\d{1}|\\d{1,2})\\.(\\d{2}|\\d{4})$", text = all_pi_tagged_clean$TAGGED) < 0, ]
+
+# remove dates xx-xx-xxxx
+all_pi_tagged_clean <- all_pi_tagged_clean[regexpr(pattern = "^\\d{1,2}-(0\\d{1}|\\d{1,2})-(\\d{2}|\\d{4})$", text = all_pi_tagged_clean$TAGGED) < 0, ]
+
+# remove words like 'szanowny', 'minister', 'premier' because they come from a greeting at the beginnig of the interpellation or at the end ("poseł", "poważanie")
+all_pi_tagged_clean <- all_pi_tagged_clean %>% filter(!TAGGED %in% c("szanowny", "minister", "premier", "poseł", "poważanie"))
+```
+
+How many tags are in the end?
+
+```{r, tagged_4}
+un_tagged <- sort(unique(all_pi_tagged_clean$TAGGED))
+length(un_tagged)
+```
+
+In order to incorporate Text Mining algorithms I'll create documents from processed stemmed data.
+
+```{r, tagged_5}
+all_pi_tagged <- all_pi_tagged_clean %>% 
+  group_by(period, ID) %>% 
+  summarise(CONTENT = paste0(TAGGED, collapse = " "))
+
+head(all_pi_tagged, 2) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+# Basic information
+
+Basic information regarding data
+
+```{r, basic_1}
+all_pi %>% group_by(period) %>% 
+  summarise(count = n(), autohrs = n_distinct(AUTHOR_CLEAN), av_len = mean(len), sd_len = sd(len), min_len = min(len), max_len = max(len)) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+For each period there is between 7.4k and 10.9k documents of average length of 2k characters. See how the interpolation number by date changed.
+
+```{r, basic_2}
+all_pi %>% 
+  group_by(date) %>% 
+  summarise(count = n()) %>% 
+  ggplot(aes(x = date, y = count)) +
+  geom_col() + 
+  geom_smooth() +
+  theme_minimal()
+```
+
+One can clearly see that the number of interpollation increases in time with some seasonal variations. Lets interpollation number by period but counting from the start of the term.
+
+```{r, basic_3}
+all_pi %>% 
+  left_join(y = period_bands, by = "period") %>% 
+  mutate(days_by = as.numeric(date - start_date)) %>% 
+  group_by(days_by, period) %>% 
+  summarise(count = n()) %>% 
+  ggplot(aes(x = days_by, y = count, group = period)) +
+  geom_point(alpha = .1) + 
+  geom_smooth() + 
+  facet_wrap(~period, scales = "free") +
+  theme_minimal()
+```
+
+Which words appear the most (most mentions in a single day)?
+ 
+```{r, basic_4}
+summ_data <- all_pi_tagged_clean %>% 
+  left_join(y = all_pi %>% select(ID, period, date)) %>% 
+  group_by(TAGGED, date) %>% 
+  summarise(count = n(), n_ids = n_distinct(ID)) %>% 
+  ungroup() %>% 
+  arrange(TAGGED, date)
+
+summ_data %>% 
+  group_by(TAGGED) %>% 
+  summarise(count_mx = max(count)) %>% 
+  top_n(n = 10, wt = count_mx) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+# Network analysis
+
+Since dataset is vast the analysis will be conducted on 3 terms separately and results will be compared. Also interpellations of people who I could not assign to a specific political party will be removed.
+
+```{r, net_1}
+to_analyze_net <- lapply(X = period_bands$period, 
+                         FUN = function(x) all_pi_tagged %>% 
+                           filter(period == x) %>% 
+                           left_join(y = all_pi %>% select(ID, period, AUTHOR = AUTHOR_CLEAN, party), by = c("ID", "period")) %>% 
+                           filter(!is.na(party)))
+names(to_analyze_net) <- period_bands$period
+```
+
+Create `texnets::PrepText` objects
+
+```{r, net_2}
+prepped_tagged <- lapply(X = period_bands$period, 
+                         FUN = function(x){
+                           textnets::PrepText(textdata = to_analyze_net[[x]],
+                                              groupvar = "AUTHOR",
+                                              textvar = "CONTENT",
+                                              node_type = "groups",
+                                              tokenizer = "words",
+                                              pos = "nouns",
+                                              # since I've done it already
+                                              remove_stop_words = FALSE, 
+                                               # since I've stemmed externally
+                                              compound_nouns = FALSE)
+                         })
+names(prepped_tagged) <- period_bands$period
+```
+
+Create network objects and convert them to igraph representation
+
+```{r, net_3}
+pi_networks <- lapply(X = period_bands$period, FUN = function(x) textnets::CreateTextnet(tidytextobject = prepped_tagged[[x]]))
+names(pi_networks) <- period_bands$period
+
+converted_graphs <- lapply(X = period_bands$period, 
+                           FUN = function(x) 
+                             convert_to_igraph(text_network_graph = pi_networks[[x]], 
+                                               edge_df = to_analyze_net[[x]] %>% 
+                                                 group_by(AUTHOR) %>% 
+                                                 summarise(k = n()) %>% 
+                                                 left_join(y = posl_df %>% filter(period == x))))
+
+names(converted_graphs) <- period_bands$period
+```
+
+## Network graphs {.tabset}
+
+Each tab consists of a graph that represent a network for each period:
+
+- color of vertices is based on the member's party
+- size on member's number of interpollations in each period
+- size of edge is based on the weight between two vertices.
+
+The sizes of egdes/vertices are scaled to the data from each period so we cannot compare between periods. 
+
+### 1997-2001
+
+```{r, net_3_1, fig.height=10, fig.width=10}
+plot_graph(converted_graphs[[1]], idx_show_label = V(converted_graphs[[1]])$ip > quantile(V(converted_graphs[[1]])$ip, .9))
+```
+
+### 2001-2005
+
+```{r, net_3_2, fig.height=10, fig.width=10}
+plot_graph(converted_graphs[[2]], idx_show_label = V(converted_graphs[[1]])$ip > quantile(V(converted_graphs[[2]])$ip, .9))
+```
+
+### 2005-2007
+
+```{r, net_3_3, fig.height=10, fig.width=10}
+plot_graph(converted_graphs[[3]], idx_show_label = V(converted_graphs[[1]])$ip > quantile(V(converted_graphs[[3]])$ip, .9))
+```
+
+## {}
+
+It is hard to see any patterns in any of those periods. Mean degree in each period was close to 3 but there were some members that *connected* to more than 150 members (table below). 
+
+```{r, graph_0}
+graphs_degrees <- do.call(rbind, 
+                          lapply(X = period_bands$period, 
+                                 FUN = function(x){
+                                   cbind(data.frame(period = x), 
+                                         enframe(degree(converted_graphs[[x]])))
+                                 }))
+graphs_degrees %>% 
+  group_by(period) %>% 
+  summarise(mean(value), max(value)) %>% 
+  left_join(y = graphs_degrees %>% group_by(period) %>% top_n(n = 1, wt = value)) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+What are the top connections (edges)?
+
+```{r, graph_1}
+do.call(rbind, 
+        lapply(X = period_bands$period, 
+               FUN = function(x) {
+                 mx_w <- get_edge_top_weights(converted_graphs[[x]])
+                 mx_w <- mx_w %>% 
+                   left_join(y = un_authors2 %>% filter(period == x) %>% select(V1 = AUTHOR, ugr1 = ugr2) %>% unique(), by = "V1") %>% 
+                   left_join(y = un_authors2 %>% filter(period == x) %>% select(V2 = AUTHOR, ugr2 = ugr2) %>% unique(), by = "V2") %>% 
+                   select(member1 = V1, party1 = ugr1, member2 = V2, party2 = ugr2, weight = w)
+                 cbind(data.frame(period = x), mx_w)
+               })) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+As we see the top connections mostly between members of the same party, but not always (e.g. Zbyszek Zaborowski from	KP Sojuszu Lewicy Demokratycznej and Zdzisław Denysiuk from	KP Akcji Wyborczej Solidarność in 1997-2001 term).
+
+Let see if weight depends whether members come from the same party.
+
+```{r, graph_2}
+do.call(rbind, 
+        lapply(X = period_bands$period, 
+               FUN = function(x) {
+                 mx_w <- get_edge_top_weights(converted_graphs[[x]], n_n = Inf)
+                 mx_w <- mx_w %>% 
+                   left_join(y = un_authors2 %>% filter(period == x) %>% select(V1 = stripped, ugr1 = ugr2) %>% unique(), by = "V1") %>% 
+                   left_join(y = un_authors2 %>% filter(period == x) %>% select(V2 = stripped, ugr2 = ugr2) %>% unique(), by = "V2") %>% 
+                   mutate(diff_party = 1 * (ugr2 != ugr1)) %>% 
+                   group_by(diff_party) %>% 
+                   summarise(mw = mean(w), sdw = sd(w), count = n())
+                 cbind(data.frame(period = x), mx_w)
+               })) %>% 
+  pivot_wider(values_fill = 0, id_cols = "period", values_from = c("mw", "sdw", "count"), names_from = "diff_party") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+So the majority of edges are for different party members (**count_1** higher than **count_2**) but the connection (edge) is stronger (higher weight) when both members are from the same party(**mw_0** is greater than **mw_1**).
+
+Interestingly in the term of 2001-2005 mean weight of the edge between same party members was similar to the mean weight of the edge between different party members. 
+
+## Communities {.tabset}
+
+Another thing to look at analysing text network is to analyse **communties**
+
+```{r, net_4}
+pi_communities <- lapply(X = period_bands$period, FUN = function(x) textnets::TextCommunities(pi_networks[[x]]))
+names(pi_communities) <- period_bands$period
+do.call(rbind, 
+        lapply(X = period_bands$period,
+               FUN = function(x){
+                 res <- pi_communities[[x]] %>% 
+                   group_by(modularity_class) %>% 
+                   summarise(n_m = n()) %>% 
+                   ungroup() %>% 
+                   summarise(n_groups = n(), min_mem = min(n_m), max_mem = max(n_m))
+                 cbind(data.frame(period = x), res)
+               })) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+Detailed picture of communities is provided in tabs below. In each period there were 7-8 communities that consists from as little as 14 to as much as 112 members.
+
+### 1997-2001
+
+```{r, net_5_1}
+pi_communities[[1]] %>% 
+  group_by(modularity_class) %>% 
+  summarise(no_members = n(), members = paste0(group, collapse = "; ")) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+### 2001-2005
+
+```{r, net_5_2}
+pi_communities[[2]] %>% 
+  group_by(modularity_class) %>% 
+  summarise(no_members = n(), members = paste0(group, collapse = "; ")) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+### 2005-2007
+
+```{r, net_5_3}
+pi_communities[[3]] %>% 
+  group_by(modularity_class) %>% 
+  summarise(no_members = n(), members = paste0(group, collapse = "; ")) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+
+## Party membership vs community {.tabset}
+
+Next question is: does the party distribution matches group distribution? To answer this question, for each term I'll calculate the distribution of party members across groups and also distribution of groups in term of parties.
+
+What is interesting:
+
+- in 1997-2001 we could observe that majority of KP Prawo i Sprawiedliwość (52%), KP Akcji Wyborczej Solidarność (34%) and KP Sojuszu Lewicy Demokratycznej (32%) were in the same group (2)
+- in 2001-2005 term all groups seems to be mixed apart from group 6 where the majority members of KP Liga Polskich Rodzin (48%), KP Prawo i Sprawiedliwość (35%), KP Ruchu Katolicko-Narodowego (40%) and KP Dom Ojczysty (50%)
+- in 2005-2007 term there is no group that is substanitally different in term of distributuon of party members - modularity does not reflect party membership
+
+### 1997-2001
+
+```{r, net_6_1_1}
+nn <- "1997-2001"
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  ggplot(mapping = aes(y = member_count, fill = party, group = party)) +
+  geom_col(aes(x = 1), position = "fill") +
+  coord_flip() +
+  facet_wrap(~modularity_class) +
+  theme_void() +
+  theme(legend.position = "right")
+```
+
+```{r, net_6_1_2}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "member_count", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r, net_6_1_3}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  group_by(modularity_class) %>% 
+  mutate(mw = round(100 * member_count / sum(member_count, 0))) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "mw", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r, net_6_1_4}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  group_by(party) %>% 
+  mutate(mw = round(100 * member_count / sum(member_count), 0)) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "mw", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+### 2001-2005
+
+```{r, net_6_2_1}
+nn <- "2001-2005"
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  ggplot(mapping = aes(y = member_count, fill = party, group = party)) +
+  geom_col(aes(x = 1), position = "fill") +
+  coord_flip() +
+  facet_wrap(~modularity_class) +
+  theme_void() +
+  theme(legend.position = "right")
+```
+
+```{r, net_6_2_2}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "member_count", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r, net_6_2_3}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  group_by(modularity_class) %>% 
+  mutate(mw = round(100 * member_count / sum(member_count, 0))) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "mw", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r, net_6_2_4}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  group_by(party) %>% 
+  mutate(mw = round(100 * member_count / sum(member_count), 0)) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "mw", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+### 2005-2007
+```{r, net_6_3_1}
+nn <- "2005-2007"
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  ggplot(mapping = aes(y = member_count, fill = party, group = party)) +
+  geom_col(aes(x = 1), position = "fill") +
+  coord_flip() +
+  facet_wrap(~modularity_class) +
+  theme_void() +
+  theme(legend.position = "right")
+```
+
+```{r, net_6_3_2}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "member_count", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r, net_6_3_3}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  group_by(modularity_class) %>% 
+  mutate(mw = round(100 * member_count / sum(member_count, 0))) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "mw", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r, net_6_3_4}
+pi_communities[[nn]] %>% 
+  left_join(un_authors2 %>% filter(period == nn) %>% 
+              select(group = stripped, party = ugr2), by = "group") %>% 
+  group_by(modularity_class, party) %>% 
+  summarise(member_count = n()) %>% 
+  group_by(party) %>% 
+  mutate(mw = round(100 * member_count / sum(member_count), 0)) %>% 
+  pivot_wider(values_fill = 0, id_cols = "party", values_from = "mw", names_from = "modularity_class") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+## Words, network measures
+
+What about used words? For each modularity group let see 10 used words.
+
+```{r, net_10}
+do.call(rbind, 
+        lapply(X = period_bands$period,
+               FUN = function(x){
+                 res <- InterpretText(pi_networks[[x]], prepped_tagged[[x]]) %>% 
+                   group_by(modularity_class) %>% 
+                   unique() %>% 
+                   top_n(n = 10) %>% 
+                   summarise(lemmas = paste0(lemma, collapse = "; "))
+                 cbind(data.frame(period = x), res)
+               })) %>% 
+  pivot_wider(id_cols = "modularity_class", names_from = "period", values_from = "lemmas", values_fill = "") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+Betweenness centrality - this measure can show which parliamentarians are consistently central to the interpellation network, indicating their significant role in shaping debates, garnering support for policies, and influencing legislative outcomes. The higher the measure, the more *control* has this parliamentarian.
+
+For each period I've calculated (and scaled) betweenness centrality for each member. Than I've focus only on those parliamentarians which were present in all periods and limit to top 10.
+
+There was no parliamentarian that had scaled betweenness centrality greater than 0 in all periods. We might see how the role of each politician shifted e.g. Grzegorz Schetyna had very high (scaled) betweenness centrality in first term, then had above an average in second and below an average in third term.
+
+```{r, net_11}
+do.call(rbind, 
+        lapply(X = period_bands$period,
+               FUN = function(x){
+                 res <- TextCentrality(pi_networks[[x]]) %>% 
+                   mutate(bc = scale(betweenness_centrality))
+                 res$member <- row.names(res)
+                 row.names(res) <- NULL
+                 cbind(data.frame(period = x), res)
+               })) %>% 
+  group_by(member) %>% 
+  mutate(count = n(), mbb = mean(bc)) %>% 
+  filter(count == 3) %>% 
+  ungroup() %>% 
+  top_n(n = length(period_bands$period) * 10, wt = mbb) %>% 
+  pivot_wider(id_cols = "member", names_from = "period", values_from = "bc") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+Another way to measure impact/centrality of politicians is closeness centrality. That approach yielded very similar results: 8 of the selected in this way politicians were also chosen based on betweeness centrality measure.
+
+```{r, net_12}
+do.call(rbind, 
+        lapply(X = period_bands$period,
+               FUN = function(x){
+                 res <- TextCentrality(pi_networks[[x]]) %>% 
+                   mutate(cc = scale(closness_centrality))
+                 res$member <- row.names(res)
+                 row.names(res) <- NULL
+                 cbind(data.frame(period = x), res)
+               })) %>% 
+  group_by(member) %>% 
+  mutate(count = n(), mcc = mean(cc)) %>% 
+  filter(count == 3) %>% 
+  ungroup() %>% 
+  top_n(n = length(period_bands$period) * 10, wt = mcc) %>% 
+  pivot_wider(id_cols = "member", names_from = "period", values_from = "cc") %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+# Evaluation 
+
+The text mining project effectively analyzed networks formed by member of parliament interpellations, revealing intricate connections and patterns within political discourse. However, further exploration into the implications of these network structures for decision-making processes could enhance the project's impact and relevance.
+
+# Summary
+
+1. Was the purpose achieved?
+
+The purpose of the project was achieved - networks that emerged from politicians interpollations were discovered. I've managed to extract important information (date, author) that enabled to give additional context to the data.
+
+2. Were the assumptions examined?
+
+**First assumption**: There exists a core group of parliamentarians who are consistently central to the interpellation network, indicating their significant role in shaping debates, garnering support for policies, and influencing legislative outcomes.
+
+I believe I've proven this by showing top members in terms of centrality measures. Additionally I provided the evidence of forming specific subgroups.
+
+**Second assumption**: There is a tendency for same party members to be close in text network.
+
+I've provided an evidence to support that claim by measuring the strength of connections between political members using graph representation. On the other hand the distribution regarding modularity classes was similar to distribution of the whole parliament.
+
+3. Conclusion
+
+Interpellations of the Polish Parliament Members is a great dataset for text mining purposes. Based on the data from 3 terms, form 1997 to 2007, the analysis proved that is certain centrality in political discourse. The more recent the term, the more interpellation there were which makes me certain that analysing recent terms would provide more robust results.
+
+# Appendix with source code and data set
+
+All the code is available at my [Github repository](https://github.com/DominikZabinski/tm_project)

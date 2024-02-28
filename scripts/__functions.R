@@ -203,3 +203,7 @@ polish_stop_words <- function() {
     "żaden", "żadna", "żadne", "żadnych", "że", "żeby")
   c(base_stop, c("ad", "vocem"))
 }
+
+polish_stop_words_df <- function(column_name = "lemma") {
+  data.frame(matrix(data = polish_stop_words(), ncol = 1, dimnames = list(NULL, column_name)))
+}
