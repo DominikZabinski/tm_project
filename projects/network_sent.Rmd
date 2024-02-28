@@ -1111,4 +1111,7 @@ Interpellations of the Polish Parliament Members is a great dataset for text min
 
 # Appendix with source code and data set
 
-All the code is available at my [Github repository](https://github.com/DominikZabinski/tm_project)
+All the code is available at my [Github repository](https://github.com/DominikZabinski/tm_project). Preprocessed files are available on [Google Drive](https://drive.google.com/drive/folders/1cEnpzzT55tsJe8YPHJq4h-1Necn_C8_4). In order to run this file one needs to:
+
+- clone the repository
+- copy data from Google Drive to `data` directory inside the `project` directory
