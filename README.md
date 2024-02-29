@@ -29,11 +29,15 @@ docker run -p 9003:9003 -it djstrong/krnnt:1.0.0
 
 All the processed data is stored in Google Drive. To make sure one has all necessary files, one has to download them on local machine. To do this run `scripts/02_processed_data_download.R`
 
+# Step 4: Conduct analysis
+
+In `projects` directory are two .Rmd files - each for one aspect of the analysis. They share data preparation and basic analysis of data.
+
 # Repository structure
 
 - `renv.*` - directories and files needed for enviroment control via `{renv}` package
 - `scripts/` - directory with all needed scripts
 - `ppc-nanno/` - downloaded from [this link](https://manage.legis.nlp.ipipan.waw.pl/download/ppc-anno.tar.gz)
 - `data/` - processed data in form of .sqlite files
-- `dicts/` - files with dictionaries:
-  - `słownik_anotacji_emocjonlanej.csv` (downloaded from [PLWORDNET](http://plwordnet.pwr.wroc.pl/wordnet/download))
+- `dicts/` - files with dictionaries
+- `project` - .Rmd files for rendering reports

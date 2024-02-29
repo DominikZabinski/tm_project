@@ -370,20 +370,6 @@
       ],
       "Hash": "3f038e5ac7f41d4ac41ce658c85e3042"
     },
-    "cluster": {
-      "Package": "cluster",
-      "Version": "2.1.4",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "grDevices",
-        "graphics",
-        "stats",
-        "utils"
-      ],
-      "Hash": "5edbbabab6ce0bf7900a74fd4358628e"
-    },
     "colorspace": {
       "Package": "colorspace",
       "Version": "2.1-0",
@@ -397,13 +383,6 @@
         "stats"
       ],
       "Hash": "f20c47fd52fae58b4e377c37bb8c335b"
-    },
-    "commonmark": {
-      "Package": "commonmark",
-      "Version": "1.9.1",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Hash": "5d8225445acb167abf7797de48b2ee3c"
     },
     "conflicted": {
       "Package": "conflicted",
@@ -790,21 +769,6 @@
       ],
       "Hash": "66488692cb8621bc78df1b9b819497a6"
     },
-    "ggtext": {
-      "Package": "ggtext",
-      "Version": "0.1.2",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R",
-        "ggplot2",
-        "grid",
-        "gridtext",
-        "rlang",
-        "scales"
-      ],
-      "Hash": "c5ba8f5056487403a299b91984be86ca"
-    },
     "glue": {
       "Package": "glue",
       "Version": "1.6.2",
@@ -895,26 +859,6 @@
         "utils"
       ],
       "Hash": "7d7f283939f563670a697165b2cf5560"
-    },
-    "gridtext": {
-      "Package": "gridtext",
-      "Version": "0.1.5",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R",
-        "Rcpp",
-        "curl",
-        "grDevices",
-        "grid",
-        "jpeg",
-        "markdown",
-        "png",
-        "rlang",
-        "stringr",
-        "xml2"
-      ],
-      "Hash": "05e4f5fffb1eecfeaac9ea0b7f255fef"
     },
     "gtable": {
       "Package": "gtable",
@@ -1090,16 +1034,6 @@
       ],
       "Hash": "26f391e42073877818f2d4f0470dca24"
     },
-    "jpeg": {
-      "Package": "jpeg",
-      "Version": "0.1-10",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R"
-      ],
-      "Hash": "031a0b683d001a7519202f0628fc0358"
-    },
     "jquerylib": {
       "Package": "jquerylib",
       "Version": "0.1.4",
@@ -1233,19 +1167,6 @@
         "R"
       ],
       "Hash": "7ce2733a9826b3aeb1775d56fd305472"
-    },
-    "markdown": {
-      "Package": "markdown",
-      "Version": "1.12",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R",
-        "commonmark",
-        "utils",
-        "xfun"
-      ],
-      "Hash": "765cf53992401b3b6c297b69e1edb8bd"
     },
     "memoise": {
       "Package": "memoise",
@@ -1419,16 +1340,6 @@
         "Rcpp"
       ],
       "Hash": "6b8177fd19982f0020743fadbfdbd933"
-    },
-    "png": {
-      "Package": "png",
-      "Version": "0.1-8",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R"
-      ],
-      "Hash": "bd54ba8a0a5faded999a7aab6e46b374"
     },
     "polyclip": {
       "Package": "polyclip",

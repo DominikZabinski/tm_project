@@ -13,76 +13,20 @@ output:
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE)
 # libraries ----
 library(DBI)
+library(RSQLite)
+library(jsonlite)
 library(tidyverse)
-library(textmineR)
-library(wordcloud)
-library(cluster)
 library(textnets)
-library(topicmodels)
-library(broom)
-library(ggridges)
 library(igraph)
-library(kableExtra) 
-
+library(kableExtra)
+library(RColorBrewer)
 # functions ----
-dtm_from_text <- function(to_analyze, text_col = "text", id_col = "id") {
-  CreateDtm(doc_vec = to_analyze[[text_col]], # character vector of documents
-            doc_names = to_analyze[[id_col]], # document names
-            ngram_window = c(1, 2), # minimum and maximum n-gram length
-            stopword_vec = polish_stop_words(),
-            lower = FALSE, # lowercase - this is the default value
-            remove_punctuation = FALSE, # punctuation - this is the default
-            remove_numbers = TRUE, # numbers - this is the default
-            verbose = FALSE, # Turn off status bar for this demo
-            cpus = 2) # def
-}
-
-calc_cdist <- function(dtm, tf_mat) {
-  tfidf <- t(dtm[ , tf_mat$term ]) * tf_mat$idf
-  tfidf <- t(tfidf)
-  csim <- tfidf / sqrt(rowSums(tfidf * tfidf))
-  csim <- csim %*% t(csim)
-  cdist <- as.dist(1 - csim)
-  cdist
-}
-
-show_top <- function(tf_mat, wt = "term_freq", title = "some title") {
-  # a doc_freq?
-  tf_mat %>% 
-    select(wt = .data[[wt]], term) %>% 
-    top_n(n = 10, wt = wt) %>% 
-    ggplot(mapping = aes(x = term, y = wt)) + 
-    geom_col() +
-    coord_flip() +
-    labs(title = title, y = wt)
-}
-
-calc_clust <- function(cdist, n_clust = 5) {
-  hc <- hclust(cdist, "ward.D")
-  clustering <- cutree(hc, n_clust)
-  clustering
-}
-
-show_hierarch <- function(cdist, n_clust = 5) {
-  # agglomerative hierarchical clustering
-  # Ward's method as a merge rule
-  # cut the dendrogram for 5 clusters for example
-  clustering <- calc_clust(cdist, n_clust)
-  hc <- hclust(cdist, "ward.D")
-  plot(hc, main = "Hierarchical clustering of 100 NIH grant abstracts",
-       ylab = "", xlab = "", yaxt = "n")
-  
-  rect.hclust(hc, n_clust, border = "red")
-}
-
-show_ridge <- function(summ_data, tt, as_height = "count") {
-  summ_data %>%
-    filter(TAGGED %in% tt) %>% 
-    mutate(as_height = .data[[as_height]]) %>% 
-    ggplot(aes(x = date, height = as_height, y = TAGGED, group = TAGGED)) +
-    ggridges::geom_ridgeline(scale = .01)  
-}
-
+#' Creates a vector with polish stopwords
+#'
+#' @return
+#' @export
+#'
+#' @examples
 polish_stop_words <- function() {
   base_stop <- c(
     # A
@@ -141,13 +85,30 @@ polish_stop_words <- function() {
   c(base_stop, c("ad", "vocem"))
 }
 
+#' Creates a data.frame with polish stopwords
+#'
+#' @param column_name string column name that will hold stopwords
+#'
+#' @return
+#' @export
+#'
+#' @examples
 polish_stop_words_df <- function(column_name = "lemma") {
   data.frame(matrix(data = polish_stop_words(), ncol = 1, dimnames = list(NULL, column_name)))
 }
 
+#' Convert CreateTextnet to igraph format
+#'
+#' @param text_network_graph CreateTextnet object
+#' @param edge_df data.frame with additional information about edges
+#'
+#' @return
+#' @export
+#'
+#' @examples
 convert_to_igraph <- function(text_network_graph, edge_df) {
   # convert to igraph
-  ll <- igraph::graph(edges = igraph::as_edgelist(text_network_graph))
+  ll <- graph(edges = as_edgelist(text_network_graph))
   # assign weights
   E(ll)$weight <- E(text_network_graph)$weight
   # assign colors
@@ -159,6 +120,18 @@ convert_to_igraph <- function(text_network_graph, edge_df) {
   
 }
 
+#' Creates a plot to show a graph
+#'
+#' @param graph_to_plot igraph object
+#' @param scale_vertex_size numeric vector to scale vertex size to
+#' @param edge_weight_limit numeric minimum value that edge weight should have for edge to be visible
+#' @param idx_show_label number indices of vertices to show a label
+#' @param scale_edge_size numeric vector to scale edge size to
+#'
+#' @return
+#' @export
+#'
+#' @examples
 plot_graph <- function(graph_to_plot, 
                        scale_vertex_size = c(2, 20), 
                        edge_weight_limit = quantile(E(graph_to_plot)$weight, 0.5),
@@ -183,17 +156,29 @@ plot_graph <- function(graph_to_plot,
   )
 }
 
+#' Scale numeric vector from one range to another
+#'
+#' @param x numeric vector
+#' @param ab numeric range to scale from
+#' @param cd numberic range to scale to
+#'
+#' @return
+#' @export
+#'
+#' @examples
 scale_to <- function(x, ab, cd) {
   min(cd) + (max(cd) - min(cd)) * (x - min(ab)) / (max(ab) - min(ab))
 }
+
 match_colors <- function(x, tt) {
   ugr <- tt[match(x = x, table = tt$AUTHOR), ]$ugr
-  avail_colors <- c(RColorBrewer::brewer.pal(8, "Dark2"), RColorBrewer::brewer.pal(8, "Set3"))
+  avail_colors <- c(brewer.pal(8, "Dark2"), brewer.pal(8, "Set3"))
   nn <- unique(tt$ugr)
   avail_colors <- avail_colors[1:length(nn)]
   avail_colors_df <- data.frame(cl = avail_colors, ugr = nn)
   avail_colors_df[match(x = ugr, table = avail_colors_df$ugr),]$cl
 }
+
 get_edge_top_weights <- function(graph, n_n = 3) {
   cbind(as_edgelist(graph) %>% as.data.frame(), data.frame(w = E(graph)$weight)) %>% 
     top_n(n = n_n, wt = w)
@@ -235,7 +220,7 @@ First step - load data from preprocessed files
 pi_files <- list.files("data", pattern = "^(pi_)")
 all_pi <- do.call(rbind, 
                   lapply(X = pi_files, FUN = function(i){
-                    mydb <- dbConnect(RSQLite::SQLite(), file.path("data", i))
+                    mydb <- dbConnect(SQLite(), file.path("data", i))
                     this_cont <- dbGetQuery(conn = mydb, 
                                             statement = "select metadata.*, ipcontent.content from ipcontent left join metadata on metadata.id = ipcontent.id")
                     dbDisconnect(mydb)
@@ -263,7 +248,7 @@ vec_to_extract_dates <- all_pi$CONTENT %>% substr(start = nchar(.) - last_part_l
 # there are some cases that will be overwritten and not treated with general approach (59 out of 28074 [0.2%]):
 #   because the last part of document did not include date (e.g. it consists of footnotes of some sort)
 #   because there were mistakes (e.g. year 3000)
-list_exceptions <- jsonlite::fromJSON(txt = "dicts/pi_dates.json")
+list_exceptions <- fromJSON(txt = "dicts/pi_dates.json")
 vec_to_extract_dates[match(x = names(list_exceptions), table = all_pi$DOC)] <- unlist(list_exceptions)
 
 # remove last part of date
@@ -376,7 +361,7 @@ Load the member list. This is a list of member for each term at the end of the t
 
 ```{r, poslowie_dict_1}
 # for further analysis
-posl_json <- jsonlite::fromJSON(txt = "dicts/poslowie.json")
+posl_json <- fromJSON(txt = "dicts/poslowie.json")
 posl_df <- do.call(rbind, 
                    lapply(names(posl_json),
                           FUN = function(i){
@@ -521,7 +506,7 @@ pi_tagged_files <- paste0("tagged_", pi_files)
 all_pi_tagged <- do.call(rbind, 
                          lapply(X = pi_tagged_files, 
                                 FUN = function(i){
-                                  mydb <- dbConnect(RSQLite::SQLite(), file.path("data", i))
+                                  mydb <- dbConnect(SQLite(), file.path("data", i))
                                   this_cont <- dbGetQuery(conn = mydb, statement = "select * from tagged")
                                   dbDisconnect(mydb)
                                   this_cont$period <- gsub("tagged_pi_", replacement = "", x = gsub(pattern = ".sqlite", replacement = "", x = i))
@@ -671,16 +656,16 @@ Create `texnets::PrepText` objects
 ```{r, net_2}
 prepped_tagged <- lapply(X = period_bands$period, 
                          FUN = function(x){
-                           textnets::PrepText(textdata = to_analyze_net[[x]],
-                                              groupvar = "AUTHOR",
-                                              textvar = "CONTENT",
-                                              node_type = "groups",
-                                              tokenizer = "words",
-                                              pos = "nouns",
-                                              # since I've done it already
-                                              remove_stop_words = FALSE, 
-                                               # since I've stemmed externally
-                                              compound_nouns = FALSE)
+                           PrepText(textdata = to_analyze_net[[x]],
+                                    groupvar = "AUTHOR",
+                                    textvar = "CONTENT",
+                                    node_type = "groups",
+                                    tokenizer = "words",
+                                    pos = "nouns",
+                                    # since I've done it already
+                                    remove_stop_words = FALSE, 
+                                    # since I've stemmed externally
+                                    compound_nouns = FALSE)
                          })
 names(prepped_tagged) <- period_bands$period
 ```
@@ -688,7 +673,7 @@ names(prepped_tagged) <- period_bands$period
 Create network objects and convert them to igraph representation
 
 ```{r, net_3}
-pi_networks <- lapply(X = period_bands$period, FUN = function(x) textnets::CreateTextnet(tidytextobject = prepped_tagged[[x]]))
+pi_networks <- lapply(X = period_bands$period, FUN = function(x) CreateTextnet(tidytextobject = prepped_tagged[[x]]))
 names(pi_networks) <- period_bands$period
 
 converted_graphs <- lapply(X = period_bands$period, 
@@ -732,7 +717,7 @@ plot_graph(converted_graphs[[3]], idx_show_label = V(converted_graphs[[1]])$ip >
 
 ## {}
 
-It is hard to see any patterns in any of those periods. Mean degree in each period was close to 3 but there were some members that *connected* to more than 150 members (table below). 
+It is hard to see any specific patterns in any of those periods but there are clearly some subgroups forming in each period. Mean degree in each period was close to 3 but there were some members that *connected* to more than 150 members (table below). 
 
 ```{r, graph_0}
 graphs_degrees <- do.call(rbind, 
@@ -797,7 +782,7 @@ Interestingly in the term of 2001-2005 mean weight of the edge between same part
 Another thing to look at analysing text network is to analyse **communties**
 
 ```{r, net_4}
-pi_communities <- lapply(X = period_bands$period, FUN = function(x) textnets::TextCommunities(pi_networks[[x]]))
+pi_communities <- lapply(X = period_bands$period, FUN = function(x) TextCommunities(pi_networks[[x]]))
 names(pi_communities) <- period_bands$period
 do.call(rbind, 
         lapply(X = period_bands$period,
